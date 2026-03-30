@@ -5,10 +5,8 @@ services:
     image: postgres:14-alpine
     container_name: nakama-postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_DB: nakama
-      POSTGRES_USER: nakama
-      POSTGRES_PASSWORD: localpassword
+    env_file:
+      - .env
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
@@ -20,16 +18,18 @@ services:
     restart: unless-stopped
     depends_on:
       - postgres
+    env_file:
+      - .env
     entrypoint:
       - "/bin/sh"
       - "-ecx"
       - |
         sleep 5;
-        /nakama/nakama migrate up --database.address postgres://nakama:localpassword@postgres:5432/nakama &&
+        /nakama/nakama migrate up --database.address ${NAKAMA_DB_URL} &&
         exec /nakama/nakama \
-          --database.address postgres://nakama:localpassword@postgres:5432/nakama \
-          --console.username admin \
-          --console.password admin123
+          --database.address ${NAKAMA_DB_URL} \
+          --console.username ${NAKAMA_CONSOLE_USER} \
+          --console.password ${NAKAMA_CONSOLE_PASSWORD}
     volumes:
       - ./nakama/data:/nakama/data   
     ports:
@@ -37,4 +37,4 @@ services:
       - "7351:7351"
 
 volumes:
-  postgres-data:   
+  postgres-data:
