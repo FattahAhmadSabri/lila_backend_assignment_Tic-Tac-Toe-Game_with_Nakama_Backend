@@ -1,0 +1,118 @@
+# ---------------------------------------------------------------
+# nakama/data/config.yml
+# Nakama Game Server Configuration
+#
+# This file tells Nakama how to behave:
+#   - Which ports to listen on
+#   - How long player sessions last
+#   - How matchmaking works
+#   - Where game logic modules are
+# ---------------------------------------------------------------
+
+name: "tictactoe-server"
+
+# -------------------------------------------
+# LOGGER
+# Controls what gets printed in server logs
+# Level options: debug, info, warn, error
+# Use "debug" while developing, "info" in production
+# -------------------------------------------
+logger:
+  level: "info"
+  stdout: true
+
+# -------------------------------------------
+# SOCKET (WebSocket / HTTP API)
+# This is how players connect to the server
+#
+# server_key: a password the frontend must
+#             send when connecting — prevents
+#             random people from hitting your API
+# -------------------------------------------
+socket:
+  server_key: "tictactoe-server-key-change-in-prod"
+  port: 7350
+  address: "0.0.0.0"
+  max_message_size_bytes: 4096
+  ping_period_ms: 15000
+  outgoing_queue_size: 64
+
+# -------------------------------------------
+# API (gRPC port)
+# -------------------------------------------
+api:
+  port: 7349
+  address: "0.0.0.0"
+
+# -------------------------------------------
+# CONSOLE (Admin Dashboard)
+# Open http://localhost:7351 in your browser
+# Login with username: admin, password below
+# Use it to: view matches, check players, read logs
+# -------------------------------------------
+console:
+  port: 7351
+  address: "0.0.0.0"
+  username: "admin"
+  password: "admin123"
+
+# -------------------------------------------
+# RUNTIME (Game Logic Modules)
+# Nakama runs your game code from this folder.
+# You write your Tic-Tac-Toe logic in Lua or
+# TypeScript and place it here.
+#
+# Your game logic should handle:
+#   - Validating a player's move
+#   - Checking for win / draw
+#   - Broadcasting updated board to both players
+#   - Handling player disconnection
+# -------------------------------------------
+runtime:
+  path: "/nakama/data/modules"
+  http_key: "tictactoe-http-key"
+
+# -------------------------------------------
+# SESSION (Player Login Tokens)
+#
+# encryption_key: used to sign JWT tokens
+#                 MUST be exactly 32 characters
+# token_expiry_sec: 86400 = 24 hours
+#   (player stays logged in for 24 hours)
+# -------------------------------------------
+session:
+  encryption_key: "change-this-32-char-secret-key!!"
+  token_expiry_sec: 86400
+  refresh_token_expiry_sec: 604800
+
+# -------------------------------------------
+# MATCHMAKER
+# Automatically pairs two players together
+#
+# interval_sec: 5  = checks for waiting players
+#               every 5 seconds
+# max_tickets: 3   = one player can only queue
+#               for 3 matches at once
+# -------------------------------------------
+matchmaker:
+  max_tickets: 3
+  interval_sec: 5
+  max_intervals: 12
+
+# -------------------------------------------
+# MATCH (Individual Game Rooms)
+#
+# max_empty_sec: 60 = if both players leave,
+#   the game room is destroyed after 60 seconds
+#   (prevents memory leaks from abandoned games)
+#
+# This supports multiple simultaneous games —
+# each match runs in its own isolated handler
+# -------------------------------------------
+match:
+  input_queue_size: 64
+  call_result_queue_size: 64
+  join_attempt_queue_size: 64
+  deferred_queue_size: 64
+  max_empty_sec: 60
+  label_update_interval_ms: 1000

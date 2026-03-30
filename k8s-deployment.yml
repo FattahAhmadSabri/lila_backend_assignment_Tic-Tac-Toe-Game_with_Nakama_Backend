@@ -1,0 +1,323 @@
+# ---------------------------------------------------------------
+# k8s-deployment.yml
+# Kubernetes Deployment (for cloud hosting)
+#
+# WHAT THIS DOES:
+#   Deploys the entire Tic-Tac-Toe app on a Kubernetes cluster
+#   (AWS EKS, Google GKE, or DigitalOcean DOKS)
+#
+# HOW TO DEPLOY:
+#   kubectl apply -f k8s-deployment.yml
+#
+# HOW TO CHECK STATUS:
+#   kubectl get pods -n tictactoe
+#   kubectl get services -n tictactoe
+# ---------------------------------------------------------------
+
+
+# -------------------------------------------
+# NAMESPACE
+# Creates an isolated space called "tictactoe"
+# so our app's resources don't mix with other apps
+# -------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tictactoe
+
+---
+# -------------------------------------------
+# SECRET
+# Stores sensitive values (passwords, keys)
+# Never put real passwords in plain text in your code —
+# use Secrets so Kubernetes manages them safely
+#
+# Before deploying: replace "CHANGE_ME" with real values
+# -------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tictactoe-secrets
+  namespace: tictactoe
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: "CHANGE_ME"
+  SESSION_ENCRYPTION_KEY: "change-this-32-char-secret-key!!"
+
+---
+# -------------------------------------------
+# PERSISTENT VOLUME CLAIM (for PostgreSQL)
+# Requests 10GB of storage from the cloud provider
+# for the database. Data survives pod restarts.
+# -------------------------------------------
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: tictactoe
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# -------------------------------------------
+# DEPLOYMENT: PostgreSQL Database
+# Runs 1 copy of the database
+# -------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: tictactoe
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: nakama
+            - name: POSTGRES_USER
+              value: nakama
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tictactoe-secrets
+                  key: POSTGRES_PASSWORD
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: "250m"      # 0.25 of a CPU core
+              memory: "256Mi"  # 256 megabytes of RAM
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+# -------------------------------------------
+# SERVICE: PostgreSQL
+# Gives the database a stable internal address
+# so Nakama can always find it as "postgres:5432"
+# Type ClusterIP = only accessible inside the cluster
+# -------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: tictactoe
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
+---
+# -------------------------------------------
+# DEPLOYMENT: Nakama Game Server
+# Runs 2 copies for reliability
+# If one crashes, the other keeps the game running
+# -------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nakama
+  namespace: tictactoe
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nakama
+  strategy:
+    type: RollingUpdate       # updates one pod at a time — no downtime
+    rollingUpdate:
+      maxSurge: 1             # temporarily run 1 extra pod during update
+      maxUnavailable: 0       # never have 0 pods running during update
+  template:
+    metadata:
+      labels:
+        app: nakama
+    spec:
+      initContainers:
+        # This runs BEFORE Nakama starts
+        # It waits until PostgreSQL is ready to accept connections
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done"
+      containers:
+        - name: nakama
+          image: heroiclabs/nakama:3.21.1
+          ports:
+            - containerPort: 7350   # HTTP/WebSocket
+            - containerPort: 7349   # gRPC
+            - containerPort: 7351   # Admin console
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tictactoe-secrets
+                  key: POSTGRES_PASSWORD
+          args:
+            - "--config"
+            - "/nakama/data/config.yml"
+            - "--database.address"
+            - "nakama:$(POSTGRES_PASSWORD)@postgres:5432/nakama"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"      # 1 full CPU core max
+              memory: "1Gi"     # 1 GB RAM max
+          # Readiness probe: Kubernetes won't send traffic
+          # to this pod until it passes this check
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 7350
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          # Liveness probe: if this fails, Kubernetes restarts the pod
+          livenessProbe:
+            httpGet:
+              path: /healthcheck
+              port: 7350
+            initialDelaySeconds: 30
+            periodSeconds: 15
+
+---
+# -------------------------------------------
+# SERVICE: Nakama
+# Gives Nakama a stable internal address
+# Type LoadBalancer = creates a public IP so
+# players can connect from the internet
+# -------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: nakama
+  namespace: tictactoe
+spec:
+  selector:
+    app: nakama
+  ports:
+    - name: http
+      port: 7350
+      targetPort: 7350
+    - name: console
+      port: 7351
+      targetPort: 7351
+  type: LoadBalancer
+
+---
+# -------------------------------------------
+# DEPLOYMENT: React Frontend
+# Runs 2 copies of the game UI
+# -------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: tictactoe
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: ghcr.io/YOUR_GITHUB_USERNAME/tictactoe-frontend:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+---
+# -------------------------------------------
+# SERVICE: Frontend
+# Type LoadBalancer = gives the game a public URL
+# Players open this URL to play the game
+# -------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: tictactoe
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+  type: LoadBalancer
+
+---
+# -------------------------------------------
+# HORIZONTAL POD AUTOSCALER (HPA) for Nakama
+#
+# This is the "concurrent game support" feature:
+# When lots of players join, Kubernetes automatically
+# starts more Nakama pods to handle the load.
+#
+# min: always keep 2 pods running
+# max: scale up to 5 pods if needed
+# cpu: if average CPU goes above 70%, add more pods
+# -------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: nakama-hpa
+  namespace: tictactoe
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nakama
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

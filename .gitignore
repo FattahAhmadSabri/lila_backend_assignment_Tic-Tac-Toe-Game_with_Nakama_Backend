@@ -1,0 +1,53 @@
+# -------------------------
+# Node / TypeScript
+# -------------------------
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# -------------------------
+# Environment variables
+# -------------------------
+.env
+.env.*
+
+# -------------------------
+# OS files
+# -------------------------
+.DS_Store
+Thumbs.db
+
+# -------------------------
+# VS Code
+# -------------------------
+.vscode/
+.idea/
+
+# -------------------------
+# Docker
+# -------------------------
+docker-data/
+*.pid
+
+# -------------------------
+# Nakama (IMPORTANT)
+# -------------------------
+nakama/data/*.db
+nakama/data/*.log
+
+# ❌ Do NOT ignore this:
+# nakama/data/modules/build/main.js  <-- keep this
+
+# -------------------------
+# TypeScript cache
+# -------------------------
+*.tsbuildinfo
+
+# -------------------------
+# Misc
+# -------------------------
+coverage/
