@@ -1,77 +1,29 @@
-const InitModule = function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama) {
+function createRoom(ctx, logger, nk, payload) {
+  const matchId = nk.matchCreate("tictactoe");
+  return JSON.stringify({ matchId });
+}
 
-    const matchInit = (ctx: any, params: any) => {
-        return {
-            state: {
-                board: ["","","","","","","","",""],
-                players: [],
-                turn: 1
-            },
-            tickRate: 1,
-            label: "tictactoe"
-        };
-    };
+function listRooms(ctx, logger, nk, payload) {
+  const matches = nk.matchList(10, true, "tictactoe", null, 2);
+  return JSON.stringify(matches.map(function(m) {
+    return { matchId: m.matchId, size: m.size };
+  }));
+}
 
-    const matchJoin = (ctx: any, dispatcher: any, tick: number, state: any, presence: any) => {
-        if (state.players.length >= 2) return null;
+function findMatch(ctx, logger, nk, payload) {
+  const matches = nk.matchList(10, true, "tictactoe", null, 2);
+  for (var i = 0; i < matches.length; i++) {
+    if (matches[i].size === 1) {
+      return JSON.stringify({ matchId: matches[i].matchId });
+    }
+  }
+  const matchId = nk.matchCreate("tictactoe");
+  return JSON.stringify({ matchId });
+}
 
-        state.players.push(presence);
-        return { state };
-    };
-
-    const checkWinner = (board: string[]) => {
-        const lines = [
-            [0,1,2],[3,4,5],[6,7,8],
-            [0,3,6],[1,4,7],[2,5,8],
-            [0,4,8],[2,4,6]
-        ];
-
-        for (const [a,b,c] of lines) {
-            if (board[a] && board[a] === board[b] && board[a] === board[c]) {
-                return board[a];
-            }
-        }
-        return null;
-    };
-
-    const matchLoop = (ctx: any, dispatcher: any, tick: number, state: any, messages: any[]) => {
-
-        for (const msg of messages) {
-
-            const data = JSON.parse(msg.data);
-            const index = data.index;
-
-            if (state.board[index] !== "") return { state };
-
-            const symbol = state.turn === 1 ? "X" : "O";
-            state.board[index] = symbol;
-
-            const winner = checkWinner(state.board);
-
-            if (winner) {
-                dispatcher.broadcastMessage(1, JSON.stringify({
-                    board: state.board,
-                    winner
-                }));
-                return null;
-            }
-
-            state.turn = state.turn === 1 ? 2 : 1;
-
-            dispatcher.broadcastMessage(1, JSON.stringify({
-                board: state.board,
-                turn: state.turn
-            }));
-        }
-
-        return { state };
-    };
-
-    nk.matchCreate("tictactoe", {
-        matchInit,
-        matchJoin,
-        matchLoop
-    });
-};
-
-!InitModule;
+function InitModule(ctx, logger, nk, initializer) {
+  logger.info("🔥 InitModule loaded");
+  initializer.registerRpc("create_room", createRoom);
+  initializer.registerRpc("list_rooms", listRooms);
+  initializer.registerRpc("find_match", findMatch);
+}
