@@ -30,6 +30,8 @@ services:
           --database.address ${NAKAMA_DB_URL} \
           --console.username ${NAKAMA_CONSOLE_USER} \
           --console.password ${NAKAMA_CONSOLE_PASSWORD}
+          --session.token_expiry_sec 7200 \
+          --session.refresh_token_expiry_sec 86400
     volumes:
       - ./nakama/data:/nakama/data   
     ports:
